@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-device = 'cpu'
+device = 'cuda'
 
 def softmax(input: torch.Tensor):
     output = torch.Tensor(input.shape)
@@ -157,8 +157,8 @@ class flash_attention(torch.nn.Module):
 
 model = flash_attention()
 input = None
-# onnx_program = torch.onnx.dynamo_export(model, input)
-# onnx_program.save("flash_attention.onnx")
+onnx_program = torch.onnx.dynamo_export(model, None, None, None)
+onnx_program.save("flash_attention.onnx")
 o,l,m = model(None, None, None)
 print(o)
 print(l)
