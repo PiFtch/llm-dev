@@ -3,7 +3,6 @@ import torch
 device = 'cuda'
 
 def softmax(input: torch.Tensor):
-    # print(input.shape[dim])
     output = torch.Tensor(input.shape)
     
     for i in range(input.shape[0]):
@@ -65,13 +64,14 @@ def flash_attention(input_Q, input_K, input_V):
     Tr = Q_LEN // Q_BLOCK_SIZE
     Tc = K_LEN // KV_BLOCK_SIZE
 
-    Q = torch.randn(1, 1, Q_LEN, 4, requires_grad=True).to(device='cpu')
-    K = torch.randn(1, 1, K_LEN, 4, requires_grad=True).to(device='cpu')
-    V = torch.randn(1, 1, K_LEN, 4, requires_grad=True).to(device='cpu')
+    Q = torch.randn(1, 1, Q_LEN, 4, requires_grad=True).to(device=device)
+    K = torch.randn(1, 1, K_LEN, 4, requires_grad=True).to(device=device)
+    V = torch.randn(1, 1, K_LEN, 4, requires_grad=True).to(device=device)
 
-    O = torch.zeros_like(Q, requires_grad=True)
-    l = torch.zeros(Q.shape[:-1])[..., None]
+    O = torch.zeros_like(Q, requires_grad=True).to(device=device)
+    l = torch.zeros(Q.shape[:-1])[..., None].to(device=device)
     m = torch.ones(Q.shape[:-1])[..., None] * NEG_INF
+    m = m.to(device=device)
 
     # step 4
     Q_BLOCKS = torch.split(Q, Q_BLOCK_SIZE, dim=2)
@@ -122,11 +122,11 @@ def flash_attention(input_Q, input_K, input_V):
             # Step 15
             O_BLOCKS[i] = (li / li_new) * torch.exp(mi - mi_new) * Oi \
                         + (torch.exp(m_block_ij - mi_new) / li_new) * P_ij_Vj
-            print(f'-----------Attention : Q{i}xK{j}---------')
-            print(O_BLOCKS[i].shape)
-            print(O_BLOCKS[0])
-            print(O_BLOCKS[1])
-            print('\n')
+            # print(f'-----------Attention : Q{i}xK{j}---------')
+            # print(O_BLOCKS[i].shape)
+            # print(O_BLOCKS[0])
+            # print(O_BLOCKS[1])
+            # print('\n')
 
             # step 16
             l_BLOCKS[i] = li_new
@@ -158,4 +158,5 @@ if __name__ == '__main__':
     res = torch._safe_softmax(M, dim=1)
     print('torch output=', res)
 
-    flash_attention()
+    opt_flash_attention = torch.compile(flash_attention)
+    opt_flash_attention(None, None, None)
