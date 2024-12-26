@@ -59,6 +59,8 @@ class MultiHeadSelfAttn(nn.Module):
         self.key_linear = torch.nn.Linear(embed_size, embed_size)
         self.value_linear = torch.nn.Linear(embed_size, embed_size)
 
+        self.fc_out = torch.nn.Linear(embed_size, embed_size)
+
     def forward(self, x, mask=None):   # X shape [batch_size, seq_len, embdded_len]
         batch_size, seq_len, embed_size = x.shape
 
@@ -115,6 +117,8 @@ class MultiHeadSelfAttn(nn.Module):
         #                 attention_output[b, h, q, d] = sum_value
         out = torch.einsum("bhqk,bhkd->bhqd", attn, values).reshape(batch_size, seq_len, self.heads * self.head_dim)
 
+        out = self.fc_out(out)
+
         return out
 
 # 创建模型实例
@@ -141,6 +145,13 @@ X = torch.randn(batch_size, seq_len, embed_size)
 # print(X)
 print(model(X))
 torch.onnx.export(model, X, "multi-head-self-attn.onnx", input_names=['input'], output_names=['output'])
+
+# trace model
+traced_model = torch.jit.trace(model, X)
+print(traced_model.graph)
+
+traced_symbolic = torch.fx.symbolic_trace(model)
+print(traced_symbolic)
 
 # Q = torch.randn(batch_size, 10, d, device=dev)
 # K = torch.randn(batch_size, 15, d, device=dev)
