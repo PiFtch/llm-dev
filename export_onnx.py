@@ -68,14 +68,10 @@ class MultiHeadSelfAttn(nn.Module):
         keys = self.key_linear(x)
         values = self.value_linear(x)
 
-        # print("raw",queries)
         queries = queries.view(batch_size, seq_len, self.heads, self.head_dim)
-        # print("view",queries)
         queries = queries.permute(0, 2, 1, 3)
-
         keys = keys.view(batch_size, seq_len, self.heads, self.head_dim)
         keys = keys.permute(0, 2, 1, 3)
-        
         values = values.view(batch_size, seq_len, self.heads, self.head_dim)
         values = values.permute(0, 2, 1, 3)
 
@@ -121,15 +117,38 @@ class MultiHeadSelfAttn(nn.Module):
 
         return out
 
+class AddNorm(torch.nn.Module):
+    def __init__(self, size, dropout=0.1):
+        super(AddNorm, self).__init__()
+        self.layer_norm = torch.nn.LayerNorm(size)
+        self.dropout = torch.nn.Dropout(dropout)
+    
+    def forward(self, x, prev_output):
+        return x + self.dropout(self.layer_norm(prev_output))
+    
+class FeedForward(torch.nn.Module):
+    def __init__(self, input_shape, hidden_size, output_size):
+        super(FeedForward, self).__init__()
+        self.fc1 = torch.nn.Linear(input_shape[0] * input_shape[1] * input_shape[2], hidden_size)
+        self.relu = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(hidden_size, output_size)
+
+    def forward(self, x:torch.Tensor):
+        x = self.fc1(x.flatten())
+        x = self.relu(x)
+        x = self.fc2(x)
+        return x
+    
+# class Encoder(torch.nn.Module):
+#     def __init__(self, input_shape, hidden_size, output_size):
+#         super(Encoder, self).__init__()
+
 # 创建模型实例
 # model = MyModel()
-
 # 创建一个示例输入张量
 # example_input = torch.tensor([1.0, 2.0, 3.0])
-
 # 导出模型为 ONNX 格式
 # torch.onnx.export(model, example_input, "my_model.onnx", input_names=['input'], output_names=['output'])
-
 # print("Model exported to my_model.onnx")
 
 batch_size = 3
@@ -139,26 +158,33 @@ heads = 4
 
 d = 256
 
-model = MultiHeadSelfAttn(embed_size=embed_size, heads=heads)
+multi_head_attn = MultiHeadSelfAttn(embed_size=embed_size, heads=heads).to(device=dev)
+add_norm = AddNorm((batch_size, seq_len, embed_size)).to(device=dev)
+ff = FeedForward((batch_size, seq_len, embed_size), embed_size, embed_size).to(device=dev)
+
 # input [batch_size, seq_len, embed_size]
-X = torch.randn(batch_size, seq_len, embed_size)
+X = torch.randn(batch_size, seq_len, embed_size).to(device=dev)
+
+# Encoder
+Y = multi_head_attn(X)
+Z = add_norm(X, Y)
+W = ff(Z)
+
+print(W)
+
 # print(X)
-print(model(X))
-torch.onnx.export(model, X, "multi-head-self-attn.onnx", input_names=['input'], output_names=['output'])
+# print(model(X))
+# torch.onnx.export(model, X, "multi-head-self-attn.onnx", input_names=['input'], output_names=['output'])
 
 # trace model
-traced_model = torch.jit.trace(model, X)
-print(traced_model.graph)
+# traced_model = torch.jit.trace(model, X)
+# print(traced_model.graph)
 
-traced_symbolic = torch.fx.symbolic_trace(model)
-print(traced_symbolic)
-
-# Q = torch.randn(batch_size, 10, d, device=dev)
-# K = torch.randn(batch_size, 15, d, device=dev)
-# V = torch.randn(batch_size, 15, d, device=dev)
-# QBLOCKS, KBLOCKS, VBLOCKS, O = flash_attn(Q,K,V,5,5)
-# print(Q)
-# print(QBLOCKS)
-# print(VBLOCKS)
-# print(KBLOCKS)
-# print(O)
+# traced_symbolic = torch.fx.symbolic_trace(model)
+# print(f"{type(traced_model)=} {type(traced_symbolic)=}")
+# print(dir(traced_symbolic.__class__))
+# print("=" * 20 )  
+# print(model)
+# torch.fx.graph_module._print_readable(traced_symbolic, "MultiHeadSelfAttn")
+# print("=" * 20 )  
+# print(traced_symbolic)
