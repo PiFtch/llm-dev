@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -44,7 +45,7 @@ def flash_attn(Q:torch.Tensor, K:torch.Tensor, V:torch.Tensor, Q_BLOCKSIZE:int, 
 
 # 封装在一个 nn.Module 中
 class MultiHeadSelfAttn(nn.Module):
-    def __init__(self,embed_size, heads):
+    def __init__(self, embed_size, heads):
         super(MultiHeadSelfAttn, self).__init__()
 
         self.embed_size = embed_size
@@ -61,12 +62,14 @@ class MultiHeadSelfAttn(nn.Module):
 
         self.fc_out = torch.nn.Linear(embed_size, embed_size)
 
-    def forward(self, x, mask=None):   # X shape [batch_size, seq_len, embdded_len]
-        batch_size, seq_len, embed_size = x.shape
+    # QKV shape [batch_size, seq_len, embdded_len]
+    def forward(self, input_queries, input_keys, input_values, mask=None):
 
-        queries = self.query_linear(x)
-        keys = self.key_linear(x)
-        values = self.value_linear(x)
+        batch_size, seq_len, embed_size = input_queries.shape
+
+        queries = self.query_linear(input_queries)
+        keys = self.key_linear(input_keys)
+        values = self.value_linear(input_values)
 
         queries = queries.view(batch_size, seq_len, self.heads, self.head_dim)
         queries = queries.permute(0, 2, 1, 3)
@@ -127,21 +130,88 @@ class AddNorm(torch.nn.Module):
         return x + self.dropout(self.layer_norm(prev_output))
     
 class FeedForward(torch.nn.Module):
-    def __init__(self, input_shape, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size, output_size):
         super(FeedForward, self).__init__()
-        self.fc1 = torch.nn.Linear(input_shape[0] * input_shape[1] * input_shape[2], hidden_size)
+        # self.fc1 = torch.nn.Linear(input_shape[0] * input_shape[1] * input_shape[2], hidden_size)
+        self.fc1 = torch.nn.Linear(input_size, hidden_size)
         self.relu = torch.nn.ReLU()
         self.fc2 = torch.nn.Linear(hidden_size, output_size)
 
-    def forward(self, x:torch.Tensor):
-        x = self.fc1(x.flatten())
+    def forward(self, x:torch.Tensor):  # input [batch_size, seq_len, embed_size]
+        x = self.fc1(x)
         x = self.relu(x)
         x = self.fc2(x)
         return x
     
-# class Encoder(torch.nn.Module):
-#     def __init__(self, input_shape, hidden_size, output_size):
-#         super(Encoder, self).__init__()
+class EncoderLayer(torch.nn.Module):
+    def __init__(self, embed_size, heads):
+        super(EncoderLayer, self).__init__()
+        self.multi_head_self_attn = MultiHeadSelfAttn(embed_size=embed_size, heads=heads)
+        self.add_norm1 = AddNorm(embed_size)
+        self.feed_forward = FeedForward(input_size=embed_size, hidden_size=2048, output_size=embed_size)
+        self.add_norm2 = AddNorm(embed_size)
+
+    def forward(self, enc_inputs):  # enc_inputs [batch_size, seq_len, embed_size]
+        x = self.multi_head_self_attn(enc_inputs, enc_inputs, enc_inputs)
+        x = self.add_norm1(enc_inputs, x)
+        y = self.feed_forward(x)
+        y = self.add_norm2(x, y)
+
+        return y
+
+class DecoderLayer(torch.nn.Module):
+    def __init__(self, embed_size, heads):
+        super(DecoderLayer, self).__init__()
+        self.multi_head_self_attn_masked = MultiHeadSelfAttn(embed_size=embed_size, heads = heads)
+        self.add_norm1 = AddNorm(embed_size)
+        self.multi_head_self_attn = MultiHeadSelfAttn(embed_size=embed_size, heads=heads)
+        self.add_norm2 = AddNorm(embed_size)
+        self.feed_forward = FeedForward(input_size=embed_size, hidden_size=2048, output_size=embed_size)
+        self.add_norm3 = AddNorm(embed_size)
+
+    # input shape [batch_size, seq_len, embed_size]
+    def forward(self, dec_input:torch.Tensor, mask:torch.Tensor, enc_output:torch.Tensor):
+        x = self.multi_head_self_attn_masked(dec_input, dec_input, dec_input, mask=mask)
+        add_norm1_output = self.add_norm1(dec_input, x)
+
+        x = self.multi_head_self_attn(add_norm1_output, enc_output, enc_output)
+        add_norm2_output = self.add_norm2(add_norm1_output, x)
+
+        x = self.feed_forward(add_norm2_output)
+        output = self.add_norm3(add_norm2_output, x)
+        return output
+
+class PositionalEncoding(torch.nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout) 
+        pos_table = np.array([[pos / np.power(10000, 2 * i / d_model) for i in range(d_model)]
+                              if pos != 0 else np.zeros(d_model) for pos in range(max_len)])
+        pos_table[1:, 0::2] = np.sin(pos_table[1:, 0::2])                  # 字嵌入维度为偶数时
+        pos_table[1:, 1::2] = np.cos(pos_table[1:, 1::2])                  # 字嵌入维度为奇数时
+        self.pos_table = torch.FloatTensor(pos_table)          # enc_inputs: [seq_len, d_model]
+
+    def forward(self, enc_inputs):                                         # enc_inputs: [batch_size, seq_len, d_model]
+        enc_inputs += self.pos_table[:enc_inputs.size(1), :]
+        return self.dropout(enc_inputs)
+
+class Encoder(torch.nn.Module):
+    def __init__(self, vocab_size, num_layers, embed_size, heads):
+        super(Encoder, self).__init__()
+        self.src_emb = torch.nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_size)
+        self.pos_enc = PositionalEncoding(d_model=embed_size)
+        self.layers = torch.nn.ModuleList([EncoderLayer(embed_size=embed_size, heads=heads) for _ in range(num_layers)])
+    
+    def forward(self, inputs):
+        # 1. encoding
+        enc_inputs = self.src_emb(inputs)
+        enc_inputs = self.pos_enc(enc_inputs)
+
+        # 2. encoder_layers
+        enc_outputs = enc_inputs
+        for layer in self.layers:
+            enc_outputs = layer(enc_outputs)
+        
 
 # 创建模型实例
 # model = MyModel()
@@ -159,18 +229,31 @@ heads = 4
 d = 256
 
 multi_head_attn = MultiHeadSelfAttn(embed_size=embed_size, heads=heads).to(device=dev)
-add_norm = AddNorm((batch_size, seq_len, embed_size)).to(device=dev)
-ff = FeedForward((batch_size, seq_len, embed_size), embed_size, embed_size).to(device=dev)
+# add_norm = AddNorm((batch_size, seq_len, embed_size)).to(device=dev)
+add_norm = AddNorm(size=embed_size).to(device=dev)
+# ff = FeedForward((batch_size, seq_len, embed_size), embed_size, embed_size).to(device=dev)
+ff = FeedForward(input_size=embed_size, hidden_size=2048, output_size=embed_size).to(device=dev)
 
 # input [batch_size, seq_len, embed_size]
 X = torch.randn(batch_size, seq_len, embed_size).to(device=dev)
-
+print("input", X.shape)
 # Encoder
-Y = multi_head_attn(X)
+Y = multi_head_attn(X, X, X)
+print("multi-head self attention", Y.shape)
 Z = add_norm(X, Y)
+print("add&norm", Z.shape)
 W = ff(Z)
+print("FFN", W.shape)
 
-print(W)
+encoder = EncoderLayer(embed_size=embed_size, heads=heads).to(device=dev)
+RES = encoder(X)
+print("RES", RES.shape)
+
+torch.onnx.export(encoder, X, "transformer-encoder.onnx", input_names=['input'], output_names=['output'])
+
+decoder = DecoderLayer(embed_size=embed_size, heads=heads).to(device=dev)
+decoder_res = decoder(X, None, RES)
+# print(W)
 
 # print(X)
 # print(model(X))
