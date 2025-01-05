@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+dev = torch.device("cuda:0" if torch.cuda.is_available() else "xpu" if torch.xpu.is_available() else "cpu")
+print(dev)
 NEG_INF = -1e10 
 
 # 定义一个普通函数
@@ -253,6 +253,7 @@ torch.onnx.export(encoder, X, "transformer-encoder.onnx", input_names=['input'],
 
 decoder = DecoderLayer(embed_size=embed_size, heads=heads).to(device=dev)
 decoder_res = decoder(X, None, RES)
+torch.onnx.export(decoder, (X, None, RES), "transformer-decoder.onnx", input_names=['input'], output_names=['output'])
 # print(W)
 
 # print(X)
