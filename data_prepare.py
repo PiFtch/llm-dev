@@ -40,7 +40,7 @@ if split_dataset:
 generate_vocab = False
 def get_vocab() -> (dict, dict):
     tgt_vocab = {'P':0, 'S':1, 'E':2} # english
-    src_vocab = {'P':0} # chn
+    src_vocab = {'P'.encode('utf8'):0} # chn
 
     max_src_len = 1
     max_tgt_len = 1
@@ -60,18 +60,18 @@ def get_vocab() -> (dict, dict):
             max_tgt_len = max(max_tgt_len, len(tgt))
             src_idx = len(src_vocab)
             for tok in tgt:
-                tgt_vocab[tok] = tgt_idx
-                tgt_idx += 1
+                if tok not in tgt_vocab:
+                    tgt_vocab[tok] = tgt_idx
+                    tgt_idx += 1
             for tok in src:
-                src_vocab[tok] = src_idx
-                src_idx += 1
+                if tok not in src_vocab:
+                    src_vocab[tok] = src_idx
+                    src_idx += 1
         # print(tgt_vocab)
         # print(src_vocab)
         print(max_src_len)
         print(max_tgt_len)
     return src_vocab, tgt_vocab
-
-
 
 
 padding_train_set = True
@@ -93,7 +93,7 @@ def padding_data():
             dec_output = copy.deepcopy(tgt_eng)
             
             src_padding_cnt = chn_maxlen - len(src_chn)
-            src_chn.extend(['P'] * src_padding_cnt)
+            src_chn.extend(['P'.encode('utf8')] * src_padding_cnt)
             tgt_eng.insert(0, 'S')
             tgt_padding_cnt = eng_maxlen - len(tgt_eng)
             tgt_eng.extend(['P'] * tgt_padding_cnt)
@@ -105,10 +105,15 @@ def padding_data():
             # print(dec_output, len(dec_output))
             # exit()
 
-            padding_enc_input_chn.extend(src_chn)
-            padding_dec_input_eng.extend(tgt_eng)
-            padding_dec_output_eng.extend(dec_output)
+            padding_enc_input_chn.append(src_chn)
+            padding_dec_input_eng.append(tgt_eng)
+            padding_dec_output_eng.append(dec_output)
     
     return padding_enc_input_chn, padding_dec_input_eng, padding_dec_output_eng
 
 # padding_data()
+# with open('translate-dataset2.txt', 'w', encoding='utf-8') as target_file:
+#     with open('translate-dataset.txt', 'r', encoding='utf-8') as file:
+#         for line in file:
+#             _line = converter.convert(line)
+#             target_file.write(_line)

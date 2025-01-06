@@ -35,40 +35,43 @@ def make_data(train_set_file):
     src_vocab, tgt_vocab = data_prepare.get_vocab()
     src_idx2word = {src_vocab[key]: key for key in src_vocab}
     tgt_idx2word = {tgt_vocab[key]: key for key in tgt_vocab}
+    _enc_inputs, _dec_inputs, _dec_outputs = data_prepare.padding_data()
+    
+    enc_inputs = []
+    dec_inputs = []
+    dec_outputs = []
+    for i in range(len(_enc_inputs)):
+        # print(_enc_inputs[i])
+        enc_input = [src_vocab[key] for key in _enc_inputs[i]]
+        dec_input = [tgt_vocab[key] for key in _dec_inputs[i]]
+        dec_output = [tgt_vocab[key] for key in _dec_outputs[i]]
+        # print("_enc_inputs", _enc_inputs[i])
+        # print(enc_input)
+        # print("=============")
+        # print("_dec_inputs", _dec_inputs[i])
+        # print(dec_input)
+        # print("=============")
+        # print("_dec_outputs", _dec_outputs[i])
+        # print(dec_output)
+        # exit()
+        enc_inputs.append(enc_input)
+        dec_inputs.append(dec_input)
+        dec_outputs.append(dec_output)
 
-    enc_inputs, dec_inputs, dec_outputs = data_prepare.padding_data()
-    # with open(train_set_file, 'r', encoding='utf-8') as file:
-    #     lines = file.readlines()
-
-    #     for i in range(len(lines)):
-    #         # print(lines[i])
-    #         chn_enc = list(lines[i].strip().split('\t')[1])
-    #         eng_dec_input
-    #         enc_input = [[src_vocab[n] for n in chn_enc]]
-    #         dec_input = [[tgt_vocab[n] for n in ]]
-
-    # for i in range(len(sentences)):
-    #     enc_input = [[src_vocab[n] for n in sentences[i][0].split()]] 
-    #     dec_input = [[tgt_vocab[n] for n in sentences[i][1].split()]] 
-    #     dec_output = [[tgt_vocab[n] for n in sentences[i][2].split()]]
-    #     # print(enc_input)
-    #     enc_inputs.extend(enc_input)
-    #     dec_inputs.extend(dec_input)
-    #     dec_outputs.extend(dec_output)
     return torch.LongTensor(enc_inputs), torch.LongTensor(dec_inputs), torch.LongTensor(dec_outputs), src_idx2word, tgt_idx2word
 
-enc_inputs, dec_inputs, dec_outputs, src_idx2word, tgt_idx2word = make_data("train_data.txt")
+# enc_inputs, dec_inputs, dec_outputs, src_idx2word, tgt_idx2word = make_data("train_data.txt")
 
-print(enc_inputs, dec_inputs, dec_outputs)
+# print(enc_inputs, dec_inputs, dec_outputs)
 
 #自定义数据集函数
 class MyDataSet(torch.utils.data.Dataset):
-    def __init__(self, enc_inputs, dec_inputs, dec_outputs):
+    def __init__(self):
         super(MyDataSet, self).__init__()
-        self.enc_inputs = enc_inputs
-        self.dec_inputs = dec_inputs
-        self.dec_outputs = dec_outputs
-        x, y = data_prepare.get_vocab()
+        # self.enc_inputs = enc_inputs
+        # self.dec_inputs = dec_inputs
+        # self.dec_outputs = dec_outputs
+        self.enc_inputs, self.dec_inputs, self.dec_outputs, _, _ = make_data("train_data.txt")
   
     def __len__(self):
         return self.enc_inputs.shape[0]

@@ -211,7 +211,17 @@ class Encoder(torch.nn.Module):
         enc_outputs = enc_inputs
         for layer in self.layers:
             enc_outputs = layer(enc_outputs)
-        
+
+import dataset
+import torch.utils.data as Data
+loader = Data.DataLoader(dataset.MyDataSet(), batch_size=2, shuffle=True)
+
+def train():
+    for epoch in range(5):
+        for enc_inputs, dec_inputs, dec_outputs in loader:
+            print(enc_inputs)
+            exit()
+train()
 
 # 创建模型实例
 # model = MyModel()
