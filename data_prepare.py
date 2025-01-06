@@ -37,7 +37,7 @@ if split_dataset:
         with open('test_data.txt', 'w', encoding='utf-8') as target_file:
             target_file.writelines(test_set)
 
-generate_vocab = True
+generate_vocab = False
 def get_vocab() -> (dict, dict):
     tgt_vocab = {'P':0, 'S':1, 'E':2} # english
     src_vocab = {'P':0} # chn
@@ -72,11 +72,43 @@ def get_vocab() -> (dict, dict):
     return src_vocab, tgt_vocab
 
 
-def padding_data():
-    a = 1
+
 
 padding_train_set = True
-if padding_train_set:
-    
+import copy
+chn_maxlen = 64
+eng_maxlen = 64
+# if padding_train_set:
+def padding_data():
+    padding_enc_input_chn = []
+    padding_dec_input_eng = []
+    padding_dec_output_eng = []
+
     with open('train_data.txt', 'r', encoding='utf-8') as file:
         lines = file.readlines()
+        for line in lines:
+            line = line.strip().split('\t')
+            src_chn = list(line[1]) # chinese
+            tgt_eng = re.findall(r'\w+|[^\w\s]', line[0], re.UNICODE)
+            dec_output = copy.deepcopy(tgt_eng)
+            
+            src_padding_cnt = chn_maxlen - len(src_chn)
+            src_chn.extend(['P'] * src_padding_cnt)
+            tgt_eng.insert(0, 'S')
+            tgt_padding_cnt = eng_maxlen - len(tgt_eng)
+            tgt_eng.extend(['P'] * tgt_padding_cnt)
+            dec_output_padding_cnt = eng_maxlen - 1 - len(dec_output)
+            dec_output.extend(['P'] * dec_output_padding_cnt)
+            dec_output.extend(['E'])
+            # print(src_chn, len(src_chn))
+            # print(tgt_eng, len(tgt_eng))
+            # print(dec_output, len(dec_output))
+            # exit()
+
+            padding_enc_input_chn.extend(src_chn)
+            padding_dec_input_eng.extend(tgt_eng)
+            padding_dec_output_eng.extend(dec_output)
+    
+    return padding_enc_input_chn, padding_dec_input_eng, padding_dec_output_eng
+
+# padding_data()

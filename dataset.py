@@ -36,25 +36,25 @@ def make_data(train_set_file):
     src_idx2word = {src_vocab[key]: key for key in src_vocab}
     tgt_idx2word = {tgt_vocab[key]: key for key in tgt_vocab}
 
-    enc_inputs, dec_inputs, dec_outputs = [], [], []
-    with open(train_set_file, 'r', encoding='utf-8') as file:
-        lines = file.readlines()
+    enc_inputs, dec_inputs, dec_outputs = data_prepare.padding_data()
+    # with open(train_set_file, 'r', encoding='utf-8') as file:
+    #     lines = file.readlines()
 
-        for i in range(len(lines)):
-            # print(lines[i])
-            chn_enc = list(lines[i].strip().split('\t')[1])
-            eng_dec_input
-            enc_input = [[src_vocab[n] for n in chn_enc]]
-            dec_input = [[tgt_vocab[n] for n in ]]
+    #     for i in range(len(lines)):
+    #         # print(lines[i])
+    #         chn_enc = list(lines[i].strip().split('\t')[1])
+    #         eng_dec_input
+    #         enc_input = [[src_vocab[n] for n in chn_enc]]
+    #         dec_input = [[tgt_vocab[n] for n in ]]
 
-    for i in range(len(sentences)):
-        enc_input = [[src_vocab[n] for n in sentences[i][0].split()]] 
-        dec_input = [[tgt_vocab[n] for n in sentences[i][1].split()]] 
-        dec_output = [[tgt_vocab[n] for n in sentences[i][2].split()]]
-        # print(enc_input)
-        enc_inputs.extend(enc_input)
-        dec_inputs.extend(dec_input)
-        dec_outputs.extend(dec_output)
+    # for i in range(len(sentences)):
+    #     enc_input = [[src_vocab[n] for n in sentences[i][0].split()]] 
+    #     dec_input = [[tgt_vocab[n] for n in sentences[i][1].split()]] 
+    #     dec_output = [[tgt_vocab[n] for n in sentences[i][2].split()]]
+    #     # print(enc_input)
+    #     enc_inputs.extend(enc_input)
+    #     dec_inputs.extend(dec_input)
+    #     dec_outputs.extend(dec_output)
     return torch.LongTensor(enc_inputs), torch.LongTensor(dec_inputs), torch.LongTensor(dec_outputs), src_idx2word, tgt_idx2word
 
 enc_inputs, dec_inputs, dec_outputs, src_idx2word, tgt_idx2word = make_data("train_data.txt")
