@@ -225,6 +225,7 @@ class Encoder(torch.nn.Module):
         enc_outputs = enc_inputs
         for layer in self.layers:
             enc_outputs = layer(enc_outputs)
+            
 
 class Decoder(torch.nn.Module):
     def __init__(self, vocab_size, num_layers, embed_size, heads):
@@ -250,14 +251,28 @@ class Decoder(torch.nn.Module):
         return dec_outputs, dec_self_attns, dec_enc_attns
 
 class Transformer(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, embed_size, tgt_vocab_size):
         super(Transformer, self).__init__()
         self.Encoder = Encoder()
         self.Decoder = DecoderLayer()
-        # self.projection = torch.nn.Linear()
+        self.projection = torch.nn.Linear(embed_size, tgt_vocab_size)
 
+    # enc_inputs: [batch_size, src_len]
+    # dec_inputs: [batch_size, tgt_len]
     def forward(self, enc_inputs, dec_inputs):
-        a = 1
+        # enc_outputs: [batch_size, src_len, embed_size]
+        # enc_self_attns: [layers, batch_size, heads, src_len, src_len]
+        enc_outputs, enc_self_attns = self.Encoder(enc_inputs)
+
+        # dec_outputs: [batch_size, tgt_len, embed_size]
+        # dec_self_attns: [layers, batch_size, heads, tgt_len, tgt_len]
+        # dec_enc_attns: [layers, batch_size, heads, tgt_len, src_len]
+        dec_outputs, dec_self_attns, dec_enc_attns = self.Decoder(dec_inputs, enc_inputs, enc_outputs)
+
+        dec_logits = self.projection(dec_outputs)
+
+        return dec_logits
+
 
 import dataset, data_prepare
 import torch.utils.data as Data
