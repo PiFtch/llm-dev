@@ -195,6 +195,20 @@ class PositionalEncoding(torch.nn.Module):
         enc_inputs += self.pos_table[:enc_inputs.size(1), :]
         return self.dropout(enc_inputs)
 
+def get_attn_pad_mask(seq_q, seq_k):    # seq_q: [batch_size, seq_len], seq_k: [batch_size, seq_len]
+    # print(seq_q.size())
+    # print(seq_q.shape)
+    batch_size, len_q = seq_q.size()
+    batch_size, len_k = seq_k.size()
+    pad_attn_mask = seq_k.data.eq(0).unsqueeze(1)
+
+    return pad_attn_mask.expand(batch_size, len_q, len_k)
+
+def get_attn_subsequence_mask(seq): # seq: [batch_size, tgt_len]
+    attn_shape = [seq.size(0), seq.size(1), seq.size(1)]
+    subsequence_mask = torch.triu(torch.ones(size=attn_shape), diagonal=1)
+    return subsequence_mask # [batch_size, tgt_len, tgt_len]
+
 class Encoder(torch.nn.Module):
     def __init__(self, vocab_size, num_layers, embed_size, heads):
         super(Encoder, self).__init__()
@@ -212,13 +226,53 @@ class Encoder(torch.nn.Module):
         for layer in self.layers:
             enc_outputs = layer(enc_outputs)
 
-import dataset
+class Decoder(torch.nn.Module):
+    def __init__(self, vocab_size, num_layers, embed_size, heads):
+        super(Decoder, self).__init__()
+        self.tgt_emb = torch.nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_size)
+        self.pos_enc = PositionalEncoding(embed_size)
+        self.layers = torch.nn.ModuleList([DecoderLayer(embed_size=embed_size, heads=heads) for _ in range(num_layers)])
+    
+    def forward(self, dec_inputs, enc_inputs, enc_outputs):
+        dec_outputs = self.tgt_emb(dec_inputs)
+        dec_outputs = self.pos_enc(dec_outputs)
+
+        dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs)
+        dec_self_attn_subsequence_mask = get_attn_subsequence_mask(dec_inputs)
+        dec_self_attn_mask = torch.gt(dec_self_attn_pad_mask + dec_self_attn_subsequence_mask, 0)
+
+        dec_enc_attn_mask = get_attn_pad_mask(dec_inputs, enc_inputs)
+        dec_self_attns, dec_enc_attns = [], []
+        for layer in self.layers:
+            dec_outputs, dec_self_attn, dec_enc_attn = layer(dec_outputs, enc_outputs, dec_self_attn_mask, dec_enc_attn_mask)
+            dec_self_attns.append(dec_self_attn)
+            dec_enc_attns.append(dec_enc_attn)
+        return dec_outputs, dec_self_attns, dec_enc_attns
+
+class Transformer(torch.nn.Module):
+    def __init__(self):
+        super(Transformer, self).__init__()
+        self.Encoder = Encoder()
+        self.Decoder = DecoderLayer()
+        # self.projection = torch.nn.Linear()
+
+    def forward(self, enc_inputs, dec_inputs):
+        a = 1
+
+import dataset, data_prepare
 import torch.utils.data as Data
 loader = Data.DataLoader(dataset.MyDataSet(), batch_size=2, shuffle=True)
 
+
 def train():
+    src_vocab, tgt_vocab = data_prepare.get_vocab()
+    
+    decoder = Decoder(vocab_size=len(tgt_vocab), num_layers=2, embed_size=1024, heads=4)
     for epoch in range(5):
         for enc_inputs, dec_inputs, dec_outputs in loader:
+                        
+            decoder(dec_inputs, enc_inputs, enc_inputs)
+            print(dec_inputs)
             print(enc_inputs)
             exit()
 train()

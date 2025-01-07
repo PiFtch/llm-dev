@@ -60,7 +60,7 @@ def make_data(train_set_file):
 
     return torch.LongTensor(enc_inputs), torch.LongTensor(dec_inputs), torch.LongTensor(dec_outputs), src_idx2word, tgt_idx2word
 
-# enc_inputs, dec_inputs, dec_outputs, src_idx2word, tgt_idx2word = make_data("train_data.txt")
+enc_inputs, dec_inputs, dec_outputs, src_idx2word, tgt_idx2word = make_data("train_data.txt")
 
 # print(enc_inputs, dec_inputs, dec_outputs)
 
