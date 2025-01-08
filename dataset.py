@@ -71,7 +71,7 @@ class MyDataSet(torch.utils.data.Dataset):
         # self.enc_inputs = enc_inputs
         # self.dec_inputs = dec_inputs
         # self.dec_outputs = dec_outputs
-        self.enc_inputs, self.dec_inputs, self.dec_outputs, _, _ = make_data("train_data.txt")
+        self.enc_inputs, self.dec_inputs, self.dec_outputs, self.src_idx2word, self.tgt_idx2word = make_data("train_data.txt")
   
     def __len__(self):
         return self.enc_inputs.shape[0]
