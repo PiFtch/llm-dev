@@ -194,7 +194,7 @@ class PositionalEncoding(torch.nn.Module):
                               if pos != 0 else np.zeros(d_model) for pos in range(max_len)])
         pos_table[1:, 0::2] = np.sin(pos_table[1:, 0::2])                  # 字嵌入维度为偶数时
         pos_table[1:, 1::2] = np.cos(pos_table[1:, 1::2])                  # 字嵌入维度为奇数时
-        self.pos_table = torch.FloatTensor(pos_table)          # enc_inputs: [seq_len, d_model]
+        self.pos_table = torch.FloatTensor(pos_table).to(device=dev)          # enc_inputs: [seq_len, d_model]
 
     def forward(self, enc_inputs):                                         # enc_inputs: [batch_size, seq_len, d_model]
         enc_inputs += self.pos_table[:enc_inputs.size(1), :]
@@ -296,11 +296,11 @@ class Transformer(torch.nn.Module):
     # dec_inputs: [batch_size, tgt_len]
     def forward(self, enc_inputs, dec_inputs):
         # Get encoder padding mask
-        enc_pad_mask = get_pad_mask(enc_inputs, vocab_pad_value=0)
+        enc_pad_mask = get_pad_mask(enc_inputs, vocab_pad_value=0).to(device=dev)
 
         # Get decoder padding & subseq masks
-        dec_pad_mask = get_pad_mask(dec_inputs, vocab_pad_value=0)
-        dec_subseq_mask = get_subseq_mask(dec_inputs)
+        dec_pad_mask = get_pad_mask(dec_inputs, vocab_pad_value=0).to(device=dev)
+        dec_subseq_mask = get_subseq_mask(dec_inputs).to(device=dev)
         dec_mask = dec_pad_mask | dec_subseq_mask
 
         # enc_outputs: [batch_size, src_len, embed_size]
@@ -317,72 +317,24 @@ class Transformer(torch.nn.Module):
 import dataset, data_prepare
 import torch.utils.data as Data
 
-cmn_dataset = dataset.MyDataSet()
-loader = Data.DataLoader(cmn_dataset, batch_size=1, shuffle=True)
+train_dataset = dataset.MyDataSet(filename='train_data.txt')
+train_loader = Data.DataLoader(train_dataset, batch_size=4, shuffle=True)
 
-# def train():
-#     src_vocab, tgt_vocab = data_prepare.get_vocab()
-    
-#     decoder = Decoder(vocab_size=len(tgt_vocab), num_layers=2, embed_size=1024, heads=4)
-#     for epoch in range(5):
-#         for enc_inputs, dec_inputs, dec_outputs in loader:
-                        
-#             decoder(dec_inputs, enc_inputs, enc_inputs)
-#             print(dec_inputs)
-#             print(enc_inputs)
-#             exit()
-# train()
+test_dataset = dataset.MyDataSet(filename='test_data.txt')
+test_loader = Data.DataLoader(test_dataset, batch_size=1, shuffle=True)
 
-# 创建模型实例
-# model = MyModel()
-# 创建一个示例输入张量
-# example_input = torch.tensor([1.0, 2.0, 3.0])
-# 导出模型为 ONNX 格式
-# torch.onnx.export(model, example_input, "my_model.onnx", input_names=['input'], output_names=['output'])
-# print("Model exported to my_model.onnx")
+# batch_size = 3
+# seq_len = 192
+# embed_size = 1024
+# heads = 4
 
-batch_size = 3
-seq_len = 192
-embed_size = 1024
-heads = 4
-
-d = 256
-
-# src_vocab, tgt_vocab = data_prepare.get_vocab()
-# src_emb = torch.nn.Embedding(num_embeddings=len(src_vocab), embedding_dim=embed_size)
-# pos_enc = PositionalEncoding(d_model=embed_size)
-# multi_head_attn = MultiHeadSelfAttn(embed_size=embed_size, heads=heads).to(device=dev)
-# # add_norm = AddNorm((batch_size, seq_len, embed_size)).to(device=dev)
-# add_norm = AddNorm(size=embed_size).to(device=dev)
-# # ff = FeedForward((batch_size, seq_len, embed_size), embed_size, embed_size).to(device=dev)
-# ff = FeedForward(input_size=embed_size, hidden_size=2048, output_size=embed_size).to(device=dev)
-# encoder = Encoder(vocab_size=len(src_vocab), num_layers=2, embed_size=embed_size, heads=heads).to(device=dev)
-# for enc_inputs, dec_inputs, dec_outputs in loader:
-#     print(enc_inputs)
-#     print(enc_inputs.shape)
-#     mask = get_pad_mask(enc_inputs, 0)
-#     subseq_mask = get_subseq_mask(enc_inputs)
-#     print(mask)
-#     print(subseq_mask)
-#     print("===============")
-#     _mask = mask | subseq_mask
-#     print(_mask)
-
-#     # enc_inputs = src_emb(enc_inputs)
-#     # enc_inputs = pos_enc(enc_inputs)
-
-#     # print(multi_head_attn(enc_inputs, enc_inputs, enc_inputs, mask=_mask))
-#     enc_outputs = encoder(enc_inputs, mask=_mask)
-#     print("enc_outputs shape", enc_outputs.shape)
-
-#     exit()
+# d = 256
 
 def train(model:Transformer, loader:Data.DataLoader, epochs=50):
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=0)
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=0).to(device=dev)
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.99)
 
     k = 500
-    
     for epoch in range(epochs):
         step = 0
         losses = []
@@ -390,14 +342,14 @@ def train(model:Transformer, loader:Data.DataLoader, epochs=50):
                                                                 # dec_inputs : [batch_size, tgt_len]
                                                                 # dec_outputs: [batch_size, tgt_len]
         
-            enc_inputs, dec_inputs, dec_outputs = enc_inputs, dec_inputs, dec_outputs
+            enc_inputs, dec_inputs, dec_outputs = enc_inputs.to(dev), dec_inputs.to(dev), dec_outputs.to(dev)
             outputs = model(enc_inputs, dec_inputs)             # outputs: [batch_size * tgt_len, tgt_vocab_size]
             # print(outputs.shape, dec_outputs.shape)
             loss = criterion(outputs, dec_outputs.view(-1))
             # print('Epoch:', '%04d' % (epoch + 1), 'loss =', '{:.6f}'.format(loss))
             losses.append(loss.item())
 
-            if step % 500 == 0:
+            if step % k == 0:
                 print('Epoch:', '%04d' % (epoch + 1), 'step', step, 'loss =', '{:.6f}'.format(np.mean(losses)))
                 losses = []
 
@@ -410,22 +362,22 @@ def train(model:Transformer, loader:Data.DataLoader, epochs=50):
 
 def greedy_decode(model: Transformer, enc_input, start_symbol, end_symbol, max_len):
     # 1. Encode
-    enc_mask = get_pad_mask(seq=enc_input, vocab_pad_value=0)
+    enc_mask = get_pad_mask(seq=enc_input, vocab_pad_value=0).to(device=dev)
     enc_outputs = model.Encoder(enc_input, mask=enc_mask)
 
     # 2. Init decoder input
-    dec_input = torch.zeros(1, max_len).type_as(enc_input.data)
+    dec_input = torch.zeros(1, max_len).type_as(enc_input.data).to(device=dev)
     next_symbol = start_symbol
 
     # 3. greedy decoding
     for i in range(max_len):
         dec_input[0][i] = next_symbol
-        dec_pad_mask = get_pad_mask(seq=dec_input, vocab_pad_value=0)
-        dec_subseq_mask = get_subseq_mask(seq=dec_input)
+        dec_pad_mask = get_pad_mask(seq=dec_input, vocab_pad_value=0).to(device=dev)
+        dec_subseq_mask = get_subseq_mask(seq=dec_input).to(device=dev)
         dec_mask = dec_pad_mask | dec_subseq_mask
-        print("===========")
-        print("dec_input shape", dec_input.shape, "enc_output shape", enc_outputs.shape)
-        print("===========")
+        # print("===========")
+        # print("dec_input shape", dec_input.shape, "enc_output shape", enc_outputs.shape)
+        # print("===========")
         dec_outputs = model.Decoder(dec_input, enc_outputs, mask=dec_mask)
         projected = model.projection(dec_outputs)
         next_symbol = projected.squeeze(0).max(dim=-1)[1][i].item()
@@ -436,17 +388,19 @@ def greedy_decode(model: Transformer, enc_input, start_symbol, end_symbol, max_l
     # 4. collect predictions
     return dec_input
 
-def inference(model:Transformer):
+def inference(model:Transformer, loader:Data.DataLoader):
     src_vocab, tgt_vocab = data_prepare.get_vocab()
     enc_inputs, _, _ = next(iter(loader))
-    print("enc_inputs ", enc_inputs.shape)
+    # print("enc_inputs ", enc_inputs.shape)
+    enc_inputs = enc_inputs.to(dev)
+
     start_symbol = tgt_vocab['S']
     end_symbol = tgt_vocab['E']
     max_len = 64
 
     # Get the decoder input using greedy decoding
-    print("greedy input", enc_inputs)
-    print("start idx", start_symbol, "end idx", end_symbol)
+    # print("greedy input", enc_inputs)
+    # print("start idx", start_symbol, "end idx", end_symbol)
     predict_dec_input = greedy_decode(model, enc_inputs, start_symbol, end_symbol, max_len)
 
     # Run the model to get the final predictions
@@ -456,15 +410,19 @@ def inference(model:Transformer):
     final_predictions = predict.data.max(-1)[1]
 
     print("Input:", enc_inputs)
-    print([cmn_dataset.src_idx2word[int(i)] for i in enc_inputs[0]])
+    print([loader.dataset.src_idx2word[int(i)] for i in enc_inputs[0]])
     print("Final Predictions:", final_predictions)
-    print([cmn_dataset.tgt_idx2word[int(i)] for i in final_predictions])
+    print([loader.dataset.tgt_idx2word[int(i)] for i in final_predictions])
 
 src_vocab, tgt_vocab = data_prepare.get_vocab()
-model = Transformer(src_vocab_size=len(src_vocab), tgt_vocab_size=len(tgt_vocab), num_layers=2, embed_size=1024, heads=4)
+# model = Transformer(src_vocab_size=len(src_vocab), tgt_vocab_size=len(tgt_vocab), num_layers=6, embed_size=2048, heads=4).to(device=dev)
 
-model = train(model=model, loader=loader, epochs=5)
-inference(model)
+model = torch.load("transformer.pth", weights_only=False).to(dev)
+model = train(model=model, loader=train_loader, epochs=5)
+
+torch.save(model, 'transformer_fp32.pth')
+
+inference(model, test_loader)
 
 exit()
 
@@ -493,15 +451,12 @@ decoder = DecoderLayer(embed_size=embed_size, heads=heads).to(device=dev)
 decoder_res = decoder(X, None, RES)
 torch.onnx.export(decoder, (X, None, RES), "transformer-decoder.onnx", input_names=['input'], output_names=['output'])
 
-import dataset
-loader = torch.utils.data.DataLoader(dataset.MyDataSet(enc_inputs, dec_inputs, dec_outputs), 2, True) 
 
-
-d_model = 512   # 字 Embedding 的维度
-d_ff = 2048     # 前向传播隐藏层维度
-d_k = d_v = 64  # K(=Q), V的维度 
-n_layers = 6    # 有多少个encoder和decoder
-n_heads = 8     # Multi-Head Attention设置为8
+# d_model = 512   # 字 Embedding 的维度
+# d_ff = 2048     # 前向传播隐藏层维度
+# d_k = d_v = 64  # K(=Q), V的维度 
+# n_layers = 6    # 有多少个encoder和decoder
+# n_heads = 8     # Multi-Head Attention设置为8
 
 # print(W)
 

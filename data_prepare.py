@@ -78,13 +78,13 @@ padding_train_set = True
 import copy
 chn_maxlen = 64
 eng_maxlen = 64
-# if padding_train_set:
-def padding_data():
+def padding_data(filename):
     padding_enc_input_chn = []
     padding_dec_input_eng = []
     padding_dec_output_eng = []
 
-    with open('train_data.txt', 'r', encoding='utf-8') as file:
+    # with open('train_data.txt', 'r', encoding='utf-8') as file:
+    with open(filename, 'r', encoding='utf-8') as file:
         lines = file.readlines()
         for line in lines:
             line = line.strip().split('\t')
