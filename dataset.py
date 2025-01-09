@@ -30,12 +30,12 @@ sentences = [['我 是 学 生 P' , 'S I am a student'   , 'I am a student E'], 
 #     return torch.LongTensor(enc_inputs), torch.LongTensor(dec_inputs), torch.LongTensor(dec_outputs)
 
 
-
-def make_data(train_set_file):
+# filename: train or test set filename
+def make_data(filename):
     src_vocab, tgt_vocab = data_prepare.get_vocab()
     src_idx2word = {src_vocab[key]: key for key in src_vocab}
     tgt_idx2word = {tgt_vocab[key]: key for key in tgt_vocab}
-    _enc_inputs, _dec_inputs, _dec_outputs = data_prepare.padding_data()
+    _enc_inputs, _dec_inputs, _dec_outputs = data_prepare.padding_data(filename=filename)
     
     enc_inputs = []
     dec_inputs = []
@@ -60,18 +60,18 @@ def make_data(train_set_file):
 
     return torch.LongTensor(enc_inputs), torch.LongTensor(dec_inputs), torch.LongTensor(dec_outputs), src_idx2word, tgt_idx2word
 
-enc_inputs, dec_inputs, dec_outputs, src_idx2word, tgt_idx2word = make_data("train_data.txt")
+# enc_inputs, dec_inputs, dec_outputs, src_idx2word, tgt_idx2word = make_data("train_data.txt")
 
 # print(enc_inputs, dec_inputs, dec_outputs)
 
 #自定义数据集函数
 class MyDataSet(torch.utils.data.Dataset):
-    def __init__(self):
+    def __init__(self, filename):
         super(MyDataSet, self).__init__()
         # self.enc_inputs = enc_inputs
         # self.dec_inputs = dec_inputs
         # self.dec_outputs = dec_outputs
-        self.enc_inputs, self.dec_inputs, self.dec_outputs, self.src_idx2word, self.tgt_idx2word = make_data("train_data.txt")
+        self.enc_inputs, self.dec_inputs, self.dec_outputs, self.src_idx2word, self.tgt_idx2word = make_data(filename)
   
     def __len__(self):
         return self.enc_inputs.shape[0]
