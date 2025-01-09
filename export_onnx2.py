@@ -2,8 +2,11 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+import dataset, data_prepare
+import torch.utils.data as Data
+
 dev = torch.device("cuda:0" if torch.cuda.is_available() else "xpu" if torch.xpu.is_available() else "cpu")
-print(dev)
+# print(dev)
 NEG_INF = -1e10 
 
 # 定义一个普通函数
@@ -315,14 +318,9 @@ class Transformer(torch.nn.Module):
         return dec_logits.view(-1, dec_logits.size(-1)) # [batch_size * seq_len, vocab_size]
 
 
-import dataset, data_prepare
-import torch.utils.data as Data
 
-train_dataset = dataset.MyDataSet(filename='train_data.txt')
-train_loader = Data.DataLoader(train_dataset, batch_size=4, shuffle=True)
 
-test_dataset = dataset.MyDataSet(filename='test_data.txt')
-test_loader = Data.DataLoader(test_dataset, batch_size=1, shuffle=True)
+
 
 # batch_size = 3
 # seq_len = 192
@@ -415,8 +413,24 @@ def inference(model:Transformer, loader:Data.DataLoader):
     print("Final Predictions:", final_predictions)
     print([loader.dataset.tgt_idx2word[int(i)] for i in final_predictions])
 
-src_vocab, tgt_vocab = data_prepare.get_vocab()
-# model = Transformer(src_vocab_size=len(src_vocab), tgt_vocab_size=len(tgt_vocab), num_layers=6, embed_size=2048, heads=4).to(device=dev)
+if __name__ == '__main__':
+
+    # data loaders
+    train_dataset = dataset.MyDataSet(filename='train_data.txt')
+    train_loader = Data.DataLoader(train_dataset, batch_size=4, shuffle=True)
+
+    test_dataset = dataset.MyDataSet(filename='test_data.txt')
+    test_loader = Data.DataLoader(test_dataset, batch_size=1, shuffle=True)
+
+    src_vocab, tgt_vocab = data_prepare.get_vocab()
+    model = Transformer(src_vocab_size=len(src_vocab), tgt_vocab_size=len(tgt_vocab), num_layers=6, embed_size=2048, heads=4).to(device=dev)
+
+    # trace model
+    enc_inputs, dec_inputs, dec_outputs = next(iter(test_loader))
+    traced_model = torch.jit.trace(model, [enc_inputs, dec_inputs])
+    print(traced_model.graph)
+
+    exit()
 
 model = torch.load("transformer.pth", weights_only=False).to(dev)
 model = train(model=model, loader=train_loader, epochs=5)
