@@ -189,7 +189,7 @@ class DecoderLayer(torch.nn.Module):
 class PositionalEncoding(torch.nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super(PositionalEncoding, self).__init__()
-        self.dropout = nn.Dropout(p=dropout) 
+        # self.dropout = nn.Dropout(p=dropout) 
         pos_table = np.array([[pos / np.power(10000, 2 * i / d_model) for i in range(d_model)]
                               if pos != 0 else np.zeros(d_model) for pos in range(max_len)])
         pos_table[1:, 0::2] = np.sin(pos_table[1:, 0::2])                  # 字嵌入维度为偶数时
@@ -198,7 +198,8 @@ class PositionalEncoding(torch.nn.Module):
 
     def forward(self, enc_inputs):                                         # enc_inputs: [batch_size, seq_len, d_model]
         enc_inputs += self.pos_table[:enc_inputs.size(1), :]
-        return self.dropout(enc_inputs)
+        # return self.dropout(enc_inputs)
+        return enc_inputs
 
 def get_attn_pad_mask(seq_q, seq_k):    # seq_q: [batch_size, seq_len], seq_k: [batch_size, seq_len]
     # print(seq_q.size())
