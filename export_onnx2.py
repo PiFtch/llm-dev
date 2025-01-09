@@ -105,8 +105,13 @@ class MultiHeadSelfAttn(nn.Module):
             # print("mask shape", mask.shape, "QKt shape", QKt.shape)
             # print("mask", mask)
             QKt = QKt.masked_fill(mask==True, float(NEG_INF))
+            # QKt = QKt.masked_fill(mask==True, torch.tensor(-60000, dtype=torch.float16))
+            # mask = torch.where(mask, 1.0, 0.0)
+            # QKt = QKt.masked_fill(mask==1.0, float(NEG_INF))
+            # QKt = torch.where(mask, float('-inf'), QKt)
             # print("masked QKt", QKt)
 
+        # print("after masked")
         # softmax
         attn = torch.softmax(QKt, dim=3)
 
@@ -204,26 +209,28 @@ class PositionalEncoding(torch.nn.Module):
         # return self.dropout(enc_inputs)
         return enc_inputs
 
-def get_attn_pad_mask(seq_q, seq_k):    # seq_q: [batch_size, seq_len], seq_k: [batch_size, seq_len]
-    # print(seq_q.size())
-    # print(seq_q.shape)
-    batch_size, len_q = seq_q.size()
-    batch_size, len_k = seq_k.size()
-    pad_attn_mask = seq_k.data.eq(0).unsqueeze(1)
+# def get_attn_pad_mask(seq_q, seq_k):    # seq_q: [batch_size, seq_len], seq_k: [batch_size, seq_len]
+#     # print(seq_q.size())
+#     # print(seq_q.shape)
+#     batch_size, len_q = seq_q.size()
+#     batch_size, len_k = seq_k.size()
+#     # pad_attn_mask = seq_k.data.eq(0).unsqueeze(1)
+#     pad_mask = torch.eq(seq_k, 0)
 
-    return pad_attn_mask.expand(batch_size, len_q, len_k)
+#     return pad_attn_mask.expand(batch_size, len_q, len_k)
 
-def get_attn_subsequence_mask(seq): # seq: [batch_size, tgt_len]
-    attn_shape = [seq.size(0), seq.size(1), seq.size(1)]
-    subsequence_mask = torch.triu(torch.ones(size=attn_shape), diagonal=1)
-    return subsequence_mask # [batch_size, tgt_len, tgt_len]
+# def get_attn_subsequence_mask(seq): # seq: [batch_size, tgt_len]
+#     attn_shape = [seq.size(0), seq.size(1), seq.size(1)]
+#     subsequence_mask = torch.triu(torch.ones(size=attn_shape), diagonal=1)
+#     return subsequence_mask # [batch_size, tgt_len, tgt_len]
 
 # 将padding位置设为True，在之后对QKt进行mask操作时，QKt对应mask上为True的位置的值置为NEG_INF，使之无穷小而难以影响softmax计算
 def get_pad_mask(seq:torch.Tensor, vocab_pad_value=0):
     # seq: [batch_size, seq_len]
     # pad_mask: [batch_size, 1, 1, seq_len]
     batch_size, seq_len = seq.shape
-    pad_mask = seq.data.eq(vocab_pad_value)
+    # pad_mask = seq.data.eq(vocab_pad_value)
+    pad_mask = torch.eq(seq, float(vocab_pad_value))
     pad_mask = pad_mask.unsqueeze(1).unsqueeze(1)
     # pad_mask = pad_mask.expand(batch_size, 1, seq_len, seq_len)
     # print("pad_mask shape", pad_mask.shape)
@@ -316,11 +323,6 @@ class Transformer(torch.nn.Module):
         dec_logits = self.projection(dec_outputs) # [batch_size, seq_len, vocab_size]
 
         return dec_logits.view(-1, dec_logits.size(-1)) # [batch_size * seq_len, vocab_size]
-
-
-
-
-
 
 # batch_size = 3
 # seq_len = 192
@@ -423,12 +425,27 @@ if __name__ == '__main__':
     test_loader = Data.DataLoader(test_dataset, batch_size=1, shuffle=True)
 
     src_vocab, tgt_vocab = data_prepare.get_vocab()
-    model = Transformer(src_vocab_size=len(src_vocab), tgt_vocab_size=len(tgt_vocab), num_layers=6, embed_size=2048, heads=4).to(device=dev)
+    model = Transformer(src_vocab_size=len(src_vocab), tgt_vocab_size=len(tgt_vocab), num_layers=6, embed_size=2048, heads=4)
+    model.to(device=dev)
+
+    model = train(model=model, loader=train_loader, epochs=2)
+    torch.save(model, 'transformer_fp16.pth')
+
+    exit()
+
+    # model.eval()
 
     # trace model
     enc_inputs, dec_inputs, dec_outputs = next(iter(test_loader))
-    traced_model = torch.jit.trace(model, [enc_inputs, dec_inputs])
-    print(traced_model.graph)
+    enc_inputs, dec_inputs, dec_outputs = enc_inputs.to(device=dev), dec_inputs.to(device=dev), dec_outputs.to(device=dev)
+    model(enc_inputs, dec_inputs)
+    # traced_model = torch.jit.trace(model, [enc_inputs, dec_inputs])
+    # print(traced_model.graph)
+
+    # torch.onnx.export(model, enc_inputs, dec_inputs, "transformer.onnx", input_names=['enc_input', 'dec_input'], output_names=['dec_output'])
+
+    input_dict = {"enc_inputs": enc_inputs, "dec_inputs": dec_inputs}
+    torch.onnx.export(model, input_dict, "transformer_fp16.onnx")
 
     exit()
 
