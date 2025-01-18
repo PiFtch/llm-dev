@@ -1,11 +1,14 @@
 import torch
 import torch.nn as nn
 import numpy as np
-
+from torch.profiler import profile, record_function, ProfilerActivity
 import dataset, data_prepare
 import torch.utils.data as Data
 
-dev = torch.device("cuda:0" if torch.cuda.is_available() else "xpu" if torch.xpu.is_available() else "cpu")
+dev = torch.device(
+    "cuda:0" if torch.cuda.is_available()
+             else "xpu" if torch.xpu.is_available()
+             else "cpu")
 # print(dev)
 NEG_INF = -1e10 
 
@@ -13,6 +16,8 @@ NEG_INF = -1e10
 def my_function(x):
     return x * 2 + 3
 
+# Q_BLOCK: split the Q matrix of [seq_len, d_model] into Blocks of [Br, d_model], seq_len % Br == 0
+# KV_BLOCK: split K V matrixs of [seq_len, d_model] into Blocks of [Bc, d_model], seq_len % Bc == 0
 def flash_attn(Q:torch.Tensor, K:torch.Tensor, V:torch.Tensor, Q_BLOCKSIZE:int, KV_BLOCKSIZE:int):
     O = torch.zeros(Q.shape)
 
@@ -32,6 +37,7 @@ def flash_attn(Q:torch.Tensor, K:torch.Tensor, V:torch.Tensor, Q_BLOCKSIZE:int, 
     Tr = Q.shape[1] // Q_BLOCKSIZE
     Tc = K.shape[1] // KV_BLOCKSIZE
 
+    # Loop
     for j in range(Tc):
         Kj = KBLOCKS[j]
         Vj = VBLOCKS[j]
@@ -39,12 +45,15 @@ def flash_attn(Q:torch.Tensor, K:torch.Tensor, V:torch.Tensor, Q_BLOCKSIZE:int, 
             Qi = QBLOCKS[i]
 
             Sij = torch.einsum("...id,...jd->ij", Qi, Kj)
-
             
-
-            # Sij = torch.masked_fill(Sij, )
+            # apply mask
+            Sij = torch.masked_fill(mask, float(NEG_INF))
 
     return QBLOCKS, KBLOCKS, VBLOCKS, O
+
+
+Q = torch.randn([1, 192, 1024])
+flash_attn(Q, Q, Q, Q_BLOCKSIZE=64, KV_BLOCKSIZE=64)
 
 # 封装在一个 nn.Module 中
 class MultiHeadSelfAttn(nn.Module):
@@ -442,10 +451,13 @@ if __name__ == '__main__':
     # traced_model = torch.jit.trace(model, [enc_inputs, dec_inputs])
     # print(traced_model.graph)
 
-    # torch.onnx.export(model, enc_inputs, dec_inputs, "transformer.onnx", input_names=['enc_input', 'dec_input'], output_names=['dec_output'])
-
     input_dict = {"enc_inputs": enc_inputs, "dec_inputs": dec_inputs}
     torch.onnx.export(model, input_dict, "transformer_fp16.onnx")
+
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.XPU], record_shapes=True) as prof:
+        with record_function("model_inference"):
+            model(inputs)
+            print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
     exit()
 
