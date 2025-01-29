@@ -16,41 +16,60 @@ NEG_INF = -1e10
 def my_function(x):
     return x * 2 + 3
 
-# Q_BLOCK: split the Q matrix of [seq_len, d_model] into Blocks of [Br, d_model], seq_len % Br == 0
-# KV_BLOCK: split K V matrixs of [seq_len, d_model] into Blocks of [Bc, d_model], seq_len % Bc == 0
-def flash_attn(Q:torch.Tensor, K:torch.Tensor, V:torch.Tensor, Q_BLOCKSIZE:int, KV_BLOCKSIZE:int):
+# Br: split the Q matrix of [seq_len, d_model] into Blocks of [Br, d_model], seq_len % Br == 0
+# Bc: split K V matrixs of [seq_len, d_model] into Blocks of [Bc, d_model], seq_len % Bc == 0
+def flash_attn(Q:torch.Tensor, K:torch.Tensor, V:torch.Tensor, Br:int, Bc:int, mask=None):
+    # output
     O = torch.zeros(Q.shape)
-
-    QBLOCKS = torch.split(Q, Q_BLOCKSIZE, dim=1)
-    KBLOCKS = torch.split(K, KV_BLOCKSIZE, dim=1)
-    VBLOCKS = torch.split(V, KV_BLOCKSIZE, dim=1)
-
-    padding_value = NEG_INF
-    padding_mask = (Q != padding_value)
-    print("padding_mask", padding_mask)
-
-    causal_mask = torch.tril(torch.ones((Q.shape[0], Q.shape[1], K.shape[1])))
-    print("causal_mask",causal_mask)
-    mask = padding_mask & causal_mask
-    print("mask", mask)
-
-    Tr = Q.shape[1] // Q_BLOCKSIZE
-    Tc = K.shape[1] // KV_BLOCKSIZE
+    # m stores max value of each row of QKt [batch_size, seq_len, seq_len]
+    # m is [batch_size, seq_len, 1]
+    m = torch.full((Q.shape[0], Q.shape[1], 1), -torch.inf)
+    # l stores the fraction of the sum of the attention weights [batch_size, seq_len, 1]
+    l = torch.zeros((Q.shape[0], Q.shape[1], 1), device=dev)
 
     # Loop
-    for j in range(Tc):
-        Kj = KBLOCKS[j]
-        Vj = VBLOCKS[j]
-        for i in range(Tr):
-            Qi = QBLOCKS[i]
+    for block_start_Bc in range(0, K.shape[1], Bc):
+        block_end_Bc = block_start_Bc + Bc
+        Kj = K[:, block_start_Bc:block_end_Bc]
+        Vj = V[:, block_start_Bc:block_end_Bc]
+        for row_start in range(0, Q.shape[1], Br):
+            row_end = row_start + Br
+            Qi = Q[:, row_start:row_end]
+            Oi = O[:, row_start:row_end]
+            mi = m[:, row_start:row_end]
+            li = l[:, row_start:row_end]
 
-            Sij = torch.einsum("...id,...jd->ij", Qi, Kj)
+            # attention score
+            Sij = torch.einsum("...id,...jd->...ij", Qi, Kj)
             
             # apply mask
-            Sij = torch.masked_fill(mask, float(NEG_INF))
+            if (mask is not None):
+                Sij = torch.masked_fill(mask, float(NEG_INF))
 
-    return QBLOCKS, KBLOCKS, VBLOCKS, O
+            # block_row_max is [batch_size, Q_BLOCKSIZE, 1]
+            mij_hat = torch.max(Sij, dim=-1, keepdim=True).values
 
+            # calculate Pij
+            # torch.add supports element-wise op and broadcasting
+            # which expands block_row_max to the same shape as Sij
+            # with the 1-size dim expanded to the other corresponding size
+            # Pij = torch.add(Sij, -block_row_max.values)
+            Pij_hat = torch.exp(Sij - mij_hat)
+            # calculate lij
+            lij_hat = torch.sum(Pij_hat, dim=-1, keepdim=True)
+            mi_new = torch.max(torch.cat((mi, mij_hat), dim=-1), dim=-1, keepdim=True).values
+            # correction of online softmax
+            li_new = torch.exp(mi - mi_new) * li + torch.exp(mij_hat - mi_new) * lij_hat      
+
+            # compute output
+            Oi = (li * torch.exp(mi - mi_new) * Oi / li_new) + (torch.exp(mij_hat - mi_new) * Pij_hat / li_new) @ Vj
+            # update
+            m[:, row_start:row_end] = mi_new
+            l[:, row_start:row_end] = li_new
+            # write back Oi to O
+            O[:, row_start:row_end] = Oi
+
+    return O
 
 Q = torch.randn([1, 192, 1024])
 flash_attn(Q, Q, Q, Q_BLOCKSIZE=64, KV_BLOCKSIZE=64)

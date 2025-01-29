@@ -3,3 +3,4 @@
 !*.py
 !*.cu
 !*.txt
+output.txt
